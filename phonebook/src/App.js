@@ -1,110 +1,170 @@
-import React, { useState } from 'react'
-
-const Filter = ({ searchTerm, handleSearchChange }) => {
-  return (
-    <div>
-      filter shown with:
-      <input value={searchTerm} onChange={handleSearchChange} />
-    </div>
-  )
-}
-
-const PersonForm = ({ newName, newNumber, handleNameChange, handleNumberChange, addPerson }) => {
-  return (
-    <form onSubmit={addPerson}>
-      <div>
-        name: <input value={newName} onChange={handleNameChange} />
-      </div>
-      <div>
-        number: <input value={newNumber} onChange={handleNumberChange} />
-      </div>
-      <div>
-        <button type="submit">add</button>
-      </div>
-    </form>
-  )
-}
-
-const Persons = ({ persons, searchTerm }) => {
-  const filteredPersons = persons.filter((person) =>
-    person.name.toLowerCase().includes(searchTerm.toLowerCase())
-  )
-
-  return (
-    <ul>
-      {filteredPersons.map((person) => (
-        <li key={person.id}>
-          {person.name} {person.number}
-        </li>
-      ))}
-    </ul>
-  )
-}
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import Notification from './Notification';
 
 const App = () => {
-  const [persons, setPersons] = useState([
-    { name: 'Arto Hellas', number: '040-123456', id: 1 },
-    { name: 'Ada Lovelace', number: '39-44-5323523', id: 2 },
-    { name: 'Dan Abramov', number: '12-43-234345', id: 3 },
-    { name: 'Mary Poppendieck', number: '39-23-6423122', id: 4 },
-  ])
-  const [newName, setNewName] = useState('')
-  const [newNumber, setNewNumber] = useState('')
-  const [searchTerm, setSearchTerm] = useState('')
+  const [persons, setPersons] = useState([]);
+  const [newName, setNewName] = useState('');
+  const [newNumber, setNewNumber] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [errorMessage, setErrorMessage] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
+
+  useEffect(() => {
+    axios
+      .get('http://localhost:3001/persons')
+      .then((response) => {
+        setPersons(response.data);
+      })
+      .catch((error) => {
+        console.log('Error fetching data from server:', error);
+      });
+  }, []);
 
   const handleNameChange = (event) => {
-    setNewName(event.target.value)
-  }
+    setNewName(event.target.value);
+  };
 
   const handleNumberChange = (event) => {
-    setNewNumber(event.target.value)
-  }
+    setNewNumber(event.target.value);
+  };
 
   const handleSearchChange = (event) => {
-    setSearchTerm(event.target.value)
-  }
+    setSearchTerm(event.target.value);
+  };
 
   const addPerson = (event) => {
-    event.preventDefault()
+    event.preventDefault();
 
-    // Check if newName already exists in persons array
-    if (persons.find((person) => person.name === newName)) {
-      alert(`${newName} is already added to the phonebook`)
-      return
+    const existingPerson = persons.find((person) => person.name === newName);
+
+    if (existingPerson) {
+      if (
+        window.confirm(
+          `${newName} is already added to the phonebook. Replace the old number with a new one?`
+        )
+      ) {
+        const updatedPerson = { ...existingPerson, number: newNumber };
+
+        axios
+          .put(`http://localhost:3001/persons/${existingPerson.id}`, updatedPerson)
+          .then((response) => {
+            setPersons(
+              persons.map((person) =>
+                person.id !== existingPerson.id ? person : response.data
+              )
+            );
+            setNewName('');
+            setNewNumber('');
+            setSuccessMessage(`Number for ${response.data.name} updated successfully.`);
+            setTimeout(() => {
+              setSuccessMessage(null);
+            }, 5000);
+          })
+          .catch((error) => {
+            if (error.response && error.response.status === 404) {
+              setErrorMessage(`Information of ${existingPerson.name} has already been removed from server.`);
+            } else {
+              console.log('Error updating person:', error);
+              setErrorMessage(`Failed to update the number for ${existingPerson.name}.`);
+            }
+            setTimeout(() => {
+              setErrorMessage(null);
+            }, 5000);
+          });
+      }
+    } else {
+      const personObject = {
+        name: newName,
+        number: newNumber,
+      };
+
+      axios
+        .post('http://localhost:3001/persons', personObject)
+        .then((response) => {
+          setPersons(persons.concat(response.data));
+          setNewName('');
+          setNewNumber('');
+          setSuccessMessage(`Person '${response.data.name}' added successfully.`);
+          setTimeout(() => {
+            setSuccessMessage(null);
+          }, 5000);
+        })
+        .catch((error) => {
+          console.log('Error adding person:', error);
+          setErrorMessage('Failed to add the person.');
+          setTimeout(() => {
+            setErrorMessage(null);
+          }, 5000);
+        });
     }
+  };
 
-    const personObject = {
-      name: newName,
-      number: newNumber,
-      id: persons.length + 1,
+  const deletePerson = (id) => {
+    const personToDelete = persons.find((person) => person.id === id);
+
+    if (personToDelete && window.confirm(`Delete ${personToDelete.name}?`)) {
+      axios
+        .delete(`http://localhost:3001/persons/${id}`)
+        .then(() => {
+          setPersons(persons.filter((person) => person.id !== id));
+          setSuccessMessage(`Person '${personToDelete.name}' deleted successfully.`);
+          setTimeout(() => {
+            setSuccessMessage(null);
+          }, 5000);
+        })
+        .catch((error) => {
+          console.log('Error deleting person:', error);
+          setErrorMessage(`Failed to delete ${personToDelete.name}.`);
+          setTimeout(() => {
+            setErrorMessage(null);
+          }, 5000);
+        });
     }
+  };
 
-    setPersons(persons.concat(personObject))
-    setNewName('')
-    setNewNumber('')
-  }
+  const filteredPersons = persons.filter((person) =>
+    person.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div>
       <h2>Phonebook</h2>
 
-      <Filter searchTerm={searchTerm} handleSearchChange={handleSearchChange} />
+      <div>
+        Filter shown with:
+        <input value={searchTerm} onChange={handleSearchChange} />
+      </div>
 
       <h3>Add a new</h3>
 
-      <PersonForm
-        newName={newName}
-        newNumber={newNumber}
-        handleNameChange={handleNameChange}
-        handleNumberChange={handleNumberChange}
-        addPerson={addPerson}
-      />
+      <form onSubmit={addPerson}>
+        <div>
+          Name: <input value={newName} onChange={handleNameChange} />
+        </div>
+        <div>
+          Number: <input value={newNumber} onChange={handleNumberChange} />
+        </div>
+        <div>
+          <button type="submit">Add</button>
+        </div>
+      </form>
 
       <h3>Numbers</h3>
 
-      <Persons persons={persons} searchTerm={searchTerm} />
-    </div>
-  )
-}
+      {errorMessage && <Notification message={errorMessage} isError={true} />}
+      {successMessage && <Notification message={successMessage} isError={false} />}
 
-export default App
+      <ul>
+        {filteredPersons.map((person) => (
+          <li key={person.id}>
+            {person.name} {person.number}
+            <button onClick={() => deletePerson(person.id)}>Delete</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+export default App;
